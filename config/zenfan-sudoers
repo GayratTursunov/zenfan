@@ -1,0 +1,5 @@
+# /etc/sudoers.d/zenfan
+# Allow any user in the sudo group to run zenfan-write-conf
+# without a password prompt — it only writes /etc/zenfan.conf
+# and validates input before writing.
+%sudo ALL=(root) NOPASSWD: /usr/local/bin/zenfan-write-conf

@@ -1,0 +1,29 @@
+#!/bin/bash
+set -euo pipefail
+
+CONF="/etc/zenfan.conf"
+NIGHT_START=22
+NIGHT_END=7
+
+if [[ -f "$CONF" ]]; then
+    # shellcheck source=/etc/zenfan.conf
+    source "$CONF" || { logger -t zenfan-night-effective -p daemon.warning -- "Failed to source $CONF"; }
+fi
+
+# Force base-10 to avoid octal interpretation of zero-padded hours (e.g. 08, 09)
+HOUR=$(( 10#$(date +%H) ))
+NIGHT_START=$(( 10#$NIGHT_START ))
+NIGHT_END=$(( 10#$NIGHT_END ))
+
+IN_NIGHT=0
+if (( NIGHT_START > NIGHT_END )); then
+    (( HOUR >= NIGHT_START || HOUR < NIGHT_END )) && IN_NIGHT=1
+else
+    (( HOUR >= NIGHT_START && HOUR < NIGHT_END )) && IN_NIGHT=1
+fi
+
+if (( IN_NIGHT == 1 )); then
+    echo auto-on
+else
+    echo auto-off
+fi

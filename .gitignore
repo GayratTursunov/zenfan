@@ -1,0 +1,12 @@
+# Runtime state files (never commit these)
+/tmp/zenfan-*
+
+# Editor artifacts
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

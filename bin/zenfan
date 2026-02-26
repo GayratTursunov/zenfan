@@ -1,0 +1,39 @@
+#!/bin/bash
+# zenfan — fan profile manager
+# Profile set: pipes new config to sudo zenfan-write-conf (NOPASSWD via sudoers.d/zenfan)
+# Status read: plain file read, no privileges required
+
+CONF="/etc/zenfan.conf"
+
+case "$1" in
+    quiet|balanced|performance)
+        # Build new content preserving all existing keys
+        if [[ -f "$CONF" ]]; then
+            if grep -q "^PROFILE=" "$CONF"; then
+                new_content=$(sed "s/^PROFILE=.*/PROFILE=$1/" "$CONF")
+            else
+                new_content=$(cat "$CONF"; echo "PROFILE=$1")
+            fi
+        else
+            new_content="PROFILE=$1"$'\nNIGHT_START=22\nNIGHT_END=7'
+        fi
+
+        # sudo runs zenfan-write-conf — NOPASSWD granted via /etc/sudoers.d/zenfan
+        if echo "$new_content" | sudo /usr/local/bin/zenfan-write-conf; then
+            echo "Fan profile set to: $1"
+        else
+            echo "Failed to set profile (exit $?)" >&2
+            exit 1
+        fi
+        ;;
+
+    status)
+        profile=$(grep "^PROFILE=" "$CONF" 2>/dev/null | cut -d= -f2)
+        echo "Current profile: ${profile:-balanced}"
+        ;;
+
+    *)
+        echo "Usage: zenfan {quiet|balanced|performance|status}"
+        exit 1
+        ;;
+esac

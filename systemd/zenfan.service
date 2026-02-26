@@ -1,0 +1,13 @@
+[Unit]
+Description=Zenfan adaptive fan control daemon
+Documentation=https://github.com/GayratTursunov/zenfan
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/zenbook-fan.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

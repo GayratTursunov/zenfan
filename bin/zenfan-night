@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+
+FILE="/tmp/zenfan-night-mode"
+log() { logger -t zenfan-night -p "daemon.$1" -- "${@:2}"; }
+
+case "$1" in
+    on)
+        echo on > "$FILE"
+        log info "Night acoustic mode: ON"
+        echo "Night acoustic mode: ON"
+        ;;
+    off)
+        echo off > "$FILE"
+        log info "Night acoustic mode: OFF"
+        echo "Night acoustic mode: OFF"
+        ;;
+    auto)
+        rm -f "$FILE"
+        log info "Night acoustic mode: AUTO schedule"
+        echo "Night acoustic mode: AUTO schedule"
+        ;;
+    status)
+        if [[ -f "$FILE" ]]; then
+            cat "$FILE"
+        else
+            echo auto
+        fi
+        ;;
+    *)
+        echo "Usage: zenfan-night {on|off|auto|status}"
+        exit 1
+        ;;
+esac

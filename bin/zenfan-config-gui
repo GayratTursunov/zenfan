@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+"""
+zenfan-config-gui  —  Night quiet hours configurator
+Reads/writes /etc/zenfan.conf, preserving all other keys (PROFILE=, etc.)
+"""
+
+import gi, os, sys, logging, subprocess, tempfile
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+CONF         = "/etc/zenfan.conf"
+DEFAULTS     = {"PROFILE": "balanced", "NIGHT_START": "22", "NIGHT_END": "7"}
+LOG_TAG      = "zenfan-config-gui"
+
+logging.basicConfig(format="%(levelname)s: %(message)s")
+log = logging.getLogger(LOG_TAG)
+
+# ── Config I/O ────────────────────────────────────────────────────────────────
+
+def load_conf():
+    """
+    Parse CONF into a dict, preserving every key including unknown ones.
+    Falls back to DEFAULTS for any missing key.
+    Returns (values_dict, original_lines_list).
+    """
+    values = dict(DEFAULTS)
+    lines  = []
+
+    try:
+        with open(CONF, "r") as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                values[k.strip()] = v.strip()
+    except FileNotFoundError:
+        log.warning("Config not found, will create with defaults: %s", CONF)
+    except OSError as e:
+        log.error("Failed to read config: %s", e)
+
+    return values, lines
+
+
+def save_conf(new_values):
+    """
+    Write back to CONF, updating only the keys in new_values and
+    preserving every other line (comments, PROFILE=, unknown keys).
+    Creates the file with full defaults if it does not exist.
+
+    Uses pkexec zenfan-write-conf — polkit action org.zenfan.write-conf
+    which triggers a polkit graphical authentication prompt.
+    """
+    _, lines = load_conf()
+
+    # Build updated line list
+    updated = set()
+    out_lines = []
+
+    for raw in lines:
+        stripped = raw.strip()
+        if "=" in stripped and not stripped.startswith("#"):
+            k = stripped.partition("=")[0].strip()
+            if k in new_values:
+                out_lines.append(f"{k}={new_values[k]}\n")
+                updated.add(k)
+                continue
+        out_lines.append(raw if raw.endswith("\n") else raw + "\n")
+
+    # Append any keys not already present
+    for k, v in new_values.items():
+        if k not in updated:
+            out_lines.append(f"{k}={v}\n")
+
+    content = "".join(out_lines).encode()
+
+    # Write via sudo zenfan-write-conf — NOPASSWD granted via /etc/sudoers.d/zenfan
+    # prompt for the active desktop user (polkit action: org.zenfan.write-conf)
+    try:
+        result = subprocess.run(
+            ["sudo", "/usr/local/bin/zenfan-write-conf"],
+            input=content,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode == 126:
+            raise PermissionError("Authentication cancelled by user")
+        if result.returncode == 127:
+            raise PermissionError("sudo or zenfan-write-conf not found")
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"zenfan-write-conf failed (exit {result.returncode}): "
+                f"{result.stderr.decode().strip()}"
+            )
+    except FileNotFoundError:
+        raise PermissionError("pkexec not found — cannot write config")
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def fmt_hour(h):
+    return f"{int(h):02d}:00"
+
+def night_duration(start, end):
+    """Return duration in hours, handling wrap-around midnight."""
+    if start >= end:
+        return (24 - start) + end
+    return end - start
+
+def night_description(start, end):
+    dur = night_duration(start, end)
+    wrap = "  (wraps midnight)" if start >= end else ""
+    return f"{fmt_hour(start)} → {fmt_hour(end)}  ·  {dur}h quiet{wrap}"
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
+
+CSS = b"""
+window {
+    background-color: #1e1e2e;
+}
+.title-label {
+    color: #cdd6f4;
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+.section-label {
+    color: #a6adc8;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+.hour-label {
+    color: #89b4fa;
+    font-size: 22px;
+    font-weight: bold;
+    min-width: 80px;
+}
+.summary-label {
+    color: #a6e3a1;
+    font-size: 12px;
+    margin-top: 2px;
+}
+.warning-label {
+    color: #f38ba8;
+    font-size: 11px;
+    margin-top: 2px;
+}
+scale trough {
+    background-color: #313244;
+    border-radius: 4px;
+    min-height: 6px;
+}
+scale trough highlight {
+    background-color: #89b4fa;
+    border-radius: 4px;
+}
+scale slider {
+    background-color: #cdd6f4;
+    border-radius: 50%;
+    min-width: 18px;
+    min-height: 18px;
+    margin: -6px;
+}
+.save-btn {
+    background-color: #89b4fa;
+    color: #1e1e2e;
+    font-weight: bold;
+    font-size: 13px;
+    border-radius: 8px;
+    padding: 8px 24px;
+    border: none;
+    margin-top: 8px;
+}
+.save-btn:hover {
+    background-color: #b4befe;
+}
+.cancel-btn {
+    background-color: #313244;
+    color: #cdd6f4;
+    font-size: 13px;
+    border-radius: 8px;
+    padding: 8px 24px;
+    border: none;
+    margin-top: 8px;
+}
+.cancel-btn:hover {
+    background-color: #45475a;
+}
+separator {
+    background-color: #313244;
+    min-height: 1px;
+    margin: 8px 0;
+}
+"""
+
+# ── Main window ───────────────────────────────────────────────────────────────
+
+class ConfigWindow(Gtk.Window):
+
+    def __init__(self, conf_values):
+        super().__init__(title="Zenfan · Night Quiet Hours")
+        self.set_border_width(24)
+        self.set_default_size(480, 0)
+        self.set_resizable(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+
+        self._start_val = int(conf_values.get("NIGHT_START", 22))
+        self._end_val   = int(conf_values.get("NIGHT_END",   7))
+
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.add(root)
+
+        # ── Header ────────────────────────────────────────────────
+        title = Gtk.Label(label="🌙  Night Quiet Hours")
+        title.get_style_context().add_class("title-label")
+        title.set_halign(Gtk.Align.START)
+        root.pack_start(title, False, False, 0)
+
+        subtitle = Gtk.Label(label="Fan speed will be limited during this window")
+        subtitle.get_style_context().add_class("section-label")
+        subtitle.set_halign(Gtk.Align.START)
+        root.pack_start(subtitle, False, False, 6)
+
+        root.pack_start(Gtk.Separator(), False, False, 0)
+
+        # ── Start hour row ────────────────────────────────────────
+        root.pack_start(self._make_label("Quiet starts at"), False, False, 12)
+        start_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        root.pack_start(start_row, False, False, 0)
+
+        self._start_display = Gtk.Label(label=fmt_hour(self._start_val))
+        self._start_display.get_style_context().add_class("hour-label")
+        self._start_display.set_width_chars(6)
+        start_row.pack_start(self._start_display, False, False, 0)
+
+        self._start_scale = self._make_scale(self._start_val)
+        self._start_scale.connect("value-changed", self._on_change)
+        start_row.pack_start(self._start_scale, True, True, 0)
+
+        # ── End hour row ──────────────────────────────────────────
+        root.pack_start(self._make_label("Quiet ends at"), False, False, 12)
+        end_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        root.pack_start(end_row, False, False, 0)
+
+        self._end_display = Gtk.Label(label=fmt_hour(self._end_val))
+        self._end_display.get_style_context().add_class("hour-label")
+        self._end_display.set_width_chars(6)
+        end_row.pack_start(self._end_display, False, False, 0)
+
+        self._end_scale = self._make_scale(self._end_val)
+        self._end_scale.connect("value-changed", self._on_change)
+        end_row.pack_start(self._end_scale, True, True, 0)
+
+        # ── Summary ───────────────────────────────────────────────
+        root.pack_start(Gtk.Separator(), False, False, 8)
+
+        self._summary = Gtk.Label()
+        self._summary.get_style_context().add_class("summary-label")
+        self._summary.set_halign(Gtk.Align.CENTER)
+        root.pack_start(self._summary, False, False, 0)
+
+        self._warning = Gtk.Label()
+        self._warning.get_style_context().add_class("warning-label")
+        self._warning.set_halign(Gtk.Align.CENTER)
+        root.pack_start(self._warning, False, False, 0)
+
+        # ── Buttons ───────────────────────────────────────────────
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        btn_row.set_halign(Gtk.Align.CENTER)
+        root.pack_start(btn_row, False, False, 8)
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.get_style_context().add_class("cancel-btn")
+        cancel_btn.connect("clicked", lambda _: self.destroy())
+        btn_row.pack_start(cancel_btn, False, False, 0)
+
+        self._save_btn = Gtk.Button(label="Save")
+        self._save_btn.get_style_context().add_class("save-btn")
+        self._save_btn.connect("clicked", self._on_save)
+        btn_row.pack_start(self._save_btn, False, False, 0)
+
+        # All widgets exist now — safe to call _refresh_summary
+        self._refresh_summary()
+
+    # ── Helpers ───────────────────────────────────────────────────
+
+    def _make_label(self, text):
+        lbl = Gtk.Label(label=text)
+        lbl.get_style_context().add_class("section-label")
+        lbl.set_halign(Gtk.Align.START)
+        return lbl
+
+    def _make_scale(self, value):
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 23, 1)
+        scale.set_value(value)
+        scale.set_draw_value(False)   # we draw our own large value label
+        scale.set_hexpand(True)
+        # Add tick marks every 3 hours
+        for h in range(0, 24, 3):
+            scale.add_mark(h, Gtk.PositionType.BOTTOM, f"{h:02d}")
+        return scale
+
+    def _refresh_summary(self):
+        s = int(self._start_scale.get_value())
+        e = int(self._end_scale.get_value())
+        self._start_display.set_text(fmt_hour(s))
+        self._end_display.set_text(fmt_hour(e))
+        self._summary.set_text(night_description(s, e))
+
+        if s == e:
+            self._warning.set_text("⚠  Start and end are the same — quiet mode will never activate")
+            self._save_btn.set_sensitive(False)
+        else:
+            self._warning.set_text("")
+            self._save_btn.set_sensitive(True)
+
+    # ── Signal handlers ───────────────────────────────────────────
+
+    def _on_change(self, _scale):
+        self._refresh_summary()
+
+    def _on_save(self, _btn):
+        s = int(self._start_scale.get_value())
+        e = int(self._end_scale.get_value())
+
+        try:
+            save_conf({"NIGHT_START": str(s), "NIGHT_END": str(e)})
+            self.destroy()
+        except PermissionError:
+            self._show_error(
+                    "Permission denied",
+                    f"Cannot write to {CONF}.\n\nAuthentication was denied or cancelled.\nMake sure the polkit policy is installed:\n/usr/share/polkit-1/actions/org.zenfan.policy"
+                )
+        except RuntimeError as ex:
+            self._show_error("Save failed", str(ex))
+
+    def _show_error(self, title, message):
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            flags=Gtk.DialogFlags.MODAL,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.CLOSE,
+            text=title,
+        )
+        dlg.format_secondary_text(message)
+        dlg.run()
+        dlg.destroy()
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main():
+    # Apply CSS
+    css_provider = Gtk.CssProvider()
+    css_provider.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(),
+        css_provider,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+    )
+
+    conf_values, _ = load_conf()
+
+    win = ConfigWindow(conf_values)
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

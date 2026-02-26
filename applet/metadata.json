@@ -1,0 +1,10 @@
+{
+    "uuid": "zenfan@ux31e",
+    "name": "Zenfan",
+    "description": "Fan control and night acoustic mode for ASUS Zenbook UX31e",
+    "version": "1.2",
+    "author": "gayrat",
+    "website": "https://github.com/GayratTursunov/zenfan",
+    "icon": "temperature-symbolic",
+    "max-instances": 1
+}

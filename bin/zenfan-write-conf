@@ -1,0 +1,27 @@
+#!/bin/bash
+# zenfan-write-conf
+# ─────────────────────────────────────────────────────────────────────────────
+# Privileged helper — reads new config content from stdin and writes it
+# atomically to /etc/zenfan.conf.
+#
+# Called via: sudo /usr/local/bin/zenfan-write-conf
+# NOPASSWD granted via /etc/sudoers.d/zenfan for the sudo group.
+#
+# Never call this script directly — use `zenfan` or `zenfan-config-gui`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CONF="/etc/zenfan.conf"
+TMP="$(mktemp /tmp/zenfan-conf.XXXXXX)"
+
+# Read new content from stdin into a temp file
+cat > "$TMP" || { rm -f "$TMP"; exit 1; }
+
+# Basic sanity check — must contain at least one KEY=value line
+if ! grep -q "^[A-Z_]*=" "$TMP"; then
+    echo "zenfan-write-conf: invalid config content" >&2
+    rm -f "$TMP"
+    exit 1
+fi
+
+# Atomic replace
+mv "$TMP" "$CONF" && chmod 644 "$CONF"
