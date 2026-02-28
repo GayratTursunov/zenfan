@@ -4,7 +4,16 @@ Adaptive fan control suite for **ASUS Zenbook UX31e** running **LMDE 7** (Linux 
 
 ![LMDE 7](https://img.shields.io/badge/LMDE-7-87CEEB?style=flat-square)
 ![Cinnamon](https://img.shields.io/badge/Cinnamon-6.6-green?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+
+---
+
+## Screenshots
+
+| Main view | Night mode menu |
+|-----------|----------------|
+| ![Applet main](docs/screenshots/applet-main.png) | ![Night menu](docs/screenshots/applet-nightmenu.png) |
 
 ---
 
@@ -14,6 +23,8 @@ Adaptive fan control suite for **ASUS Zenbook UX31e** running **LMDE 7** (Linux 
 - **Night acoustic mode** — automatic fan limiter during configurable quiet hours
 - **Adaptive learning** — offset adjusts over time to your system's thermal behaviour
 - **Predictive cooling** — detects rapid temperature rises before throttling occurs
+- **Real RPM tachometer** — reads `fan1_input` directly; falls back to PWM estimation (marked `~`) when daemon has manual control
+- **BIOS Auto awareness** — when daemon is inactive, applet detects BIOS auto mode, disables controls, shows `⚙` indicator
 - **Cinnamon panel applet** — live temperature graph, colour-reactive by heat level, one-click profile switching
 - **GTK config GUI** — dark-themed night schedule editor with live preview
 - **No password prompts** — sudoers NOPASSWD scoped to a single write helper
@@ -41,11 +52,14 @@ zenfan/
 ├── systemd/
 │   └── zenfan.service          # systemd service unit
 ├── docs/
+│   ├── screenshots/            # Applet screenshots
 │   ├── HARDWARE.md             # hwmon path detection and hardware notes
 │   ├── PROFILES.md             # Fan profile thermal curves explained
-│   └── NIGHT_MODE.md           # Night mode logic explained
+│   ├── NIGHT_MODE.md           # Night mode logic explained
+│   └── INSTALL.md              # Manual installation steps
 ├── install.sh                  # Automated installer
 ├── uninstall.sh                # Clean removal script
+├── CHANGELOG.md
 └── README.md
 ```
 
@@ -124,21 +138,36 @@ zenfan-night status   # show current setting
 zenfan-config-gui
 ```
 
-Or use the applet menu → *Configure night hours*.
+---
+
+## Applet display
+
+| State | Panel label | Meaning |
+|-------|------------|---------|
+| Cool, daemon active | `❄ 52°` | Normal operation |
+| Warm | `🌡 63°` | Mid-range temperature |
+| Hot | `🔥 78°` | High temperature |
+| Night mode active | `❄ 52° 🌙` | Quiet hours in effect |
+| Daemon inactive | `❄ 52° ⚙` | BIOS auto control |
+
+**Fan speed display:**
+- `4100 RPM (65%)` — live tachometer + PWM percent (daemon active)
+- `3900~ RPM (65%)` — PWM-estimated RPM rounded to nearest 100 (manual control)
+- `4100 RPM` — live tachometer, no percent (daemon inactive / BIOS auto)
+- `N/A` — tachometer returned invalid value (> 15000 RPM)
 
 ---
 
 ## Hardware Paths
 
-The default hwmon paths are:
-
 | Path | Purpose |
 |------|---------|
 | `/sys/class/hwmon/hwmon2/temp1_input` | CPU temperature |
-| `/sys/class/hwmon/hwmon4/pwm1` | Fan PWM control |
-| `/sys/class/hwmon/hwmon4/pwm1_enable` | Manual control enable |
+| `/sys/class/hwmon/hwmon4/pwm1` | Fan PWM control (0–255, effective 0–200) |
+| `/sys/class/hwmon/hwmon4/pwm1_enable` | 1=manual, 2=auto |
+| `/sys/class/hwmon/hwmon4/fan1_input` | Real RPM tachometer |
 
-These may differ on your system. See [docs/HARDWARE.md](docs/HARDWARE.md) for detection instructions.
+See [docs/HARDWARE.md](docs/HARDWARE.md) for detection instructions if your indices differ.
 
 ---
 
@@ -146,25 +175,11 @@ These may differ on your system. See [docs/HARDWARE.md](docs/HARDWARE.md) for de
 
 | Operation | Method | Requires |
 |-----------|--------|----------|
-| Read temperature / PWM | sysfs file read | None |
+| Read temperature / PWM / RPM | sysfs file read | None |
 | Read config | File read | None |
 | Write config (profile/schedule) | `sudo zenfan-write-conf` | NOPASSWD (sudoers.d) |
 | Night mode override | Write to `/tmp` | None |
 | Fan PWM control | systemd daemon runs as root | systemd |
-
-The sudoers rule grants **only** the `sudo` group passwordless access to `/usr/local/bin/zenfan-write-conf`, which validates its input and performs an atomic write to `/etc/zenfan.conf`. No other binary has elevated privileges.
-
----
-
-## Applet
-
-The Cinnamon panel applet shows:
-- Live temperature with colour coding: ❄ cool → 🌡 warm → 🔥 hot
-- 🌙 indicator when night acoustic mode is active
-- 60-second rolling temperature graph with gradient fill and per-segment colour
-- Fan speed (estimated from PWM)
-- Profile and night mode status
-- One-click profile switching and night mode control
 
 ---
 
@@ -174,7 +189,11 @@ The Cinnamon panel applet shows:
 bash uninstall.sh
 ```
 
-Optionally preserves `/etc/zenfan.conf`.
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md)
 
 ---
 

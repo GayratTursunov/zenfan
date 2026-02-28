@@ -20,32 +20,25 @@ target. Three built-in profiles cover different use cases.
 | P4 (HIGH→MAX)   | 170 | 180 | 210 |
 | P5 (above MAX)  | 210 | 220 | 255 |
 
+PWM range is 0–255 (full hardware range). Night mode ceiling: 150.
+
 ## Hysteresis
 
 A 3 °C hysteresis band prevents the fan from oscillating when temperature
-hovers near a zone boundary. The zone only changes when temperature crosses
-`boundary ± 3 °C`.
+hovers near a zone boundary.
 
 ## Smooth ramp
 
-PWM changes by at most 8 units per cycle (every 3 seconds). This prevents
-abrupt fan speed changes that would be acoustically jarring.
+PWM changes by at most 8 units per cycle (every 3 seconds) to prevent
+abrupt acoustically jarring fan speed changes.
 
 ## Adaptive learning
 
-The daemon tracks a `LEARN_OFFSET` that shifts zone boundaries based on
-observed thermal behaviour:
-
-- Temperature stays above 75 °C → offset increases (fan spins up earlier)
-- Temperature stays below 50 °C → offset decreases (fan spins up later)
-- Offset clamped to `[-5, +15]`
-
-The offset persists in `/tmp/zenfan-state` across daemon restarts (but not
-reboots).
+Tracks a `LEARN_OFFSET` that shifts zone boundaries based on observed
+thermal behaviour. Offset clamped to `[-5, +15]`, persists in
+`/tmp/zenfan-state` across daemon restarts.
 
 ## Emergency overrides
-
-These override all profile logic:
 
 | Condition | Action |
 |-----------|--------|

@@ -28,10 +28,11 @@ const BIN = {
 
 // sysfs paths — no subprocess needed, plain file reads
 const SYS = {
-    temp: "/sys/class/hwmon/hwmon2/temp1_input",
-    pwm:  "/sys/class/hwmon/hwmon4/pwm1",
+    temp:      "/sys/class/hwmon/hwmon2/temp1_input",
+    pwm:       "/sys/class/hwmon/hwmon4/pwm1",
+    pwmEnable: "/sys/class/hwmon/hwmon4/pwm1_enable",
+    rpm:       "/sys/class/hwmon/hwmon4/fan1_input",
 };
-
 const CONF = "/etc/zenfan.conf";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ class ZenFanApplet extends Applet.TextApplet {
         super(orientation, panelHeight, instanceId);
 
         this.graphData = new Array(60).fill(50);
+        this._lastRpm  = null;  // cache last known RPM for manual control mode
 
         this.menuManager = new PopupMenu.PopupMenuManager(this);
         this.menu        = new Applet.AppletPopupMenu(this, orientation);
@@ -122,6 +124,7 @@ class ZenFanApplet extends Applet.TextApplet {
         this.menu.addMenuItem(this.profileLabel);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._profileItems = [];
         this.addProfileItem("quiet");
         this.addProfileItem("balanced");
         this.addProfileItem("performance");
@@ -163,6 +166,7 @@ class ZenFanApplet extends Applet.TextApplet {
             });
         });
         this.menu.addMenuItem(item);
+        this._profileItems.push(item);
     }
 
     addNightModeChoice(label, mode) {
@@ -298,6 +302,25 @@ class ZenFanApplet extends Applet.TextApplet {
         } catch { return null; }
     }
 
+    async _readRpm() {
+        try {
+            let raw = readSysFile(SYS.rpm);
+            let val = parseInt(raw);
+            if (isNaN(val) || val === 0) return null;  // 0 = manual control mode, tachometer stopped
+            this._lastRpm = val;  // cache last known good reading
+            return val;
+        } catch { return null; }
+    }
+
+    // Returns true if daemon is in manual control (pwm1_enable = 1 = daemon active)
+    // Returns false if auto mode (pwm1_enable = 2 = daemon inactive / BIOS control)
+    _readDaemonActive() {
+        try {
+            let raw = readSysFile(SYS.pwmEnable);
+            return parseInt(raw) === 1;
+        } catch { return false; }
+    }
+
     async _readProfile() {
         try {
             let out = await runAsync([BIN.zenfan, "status"]);
@@ -345,15 +368,20 @@ class ZenFanApplet extends Applet.TextApplet {
 
         try {
             // All five reads run concurrently — nothing blocks the main thread
-            let [temp, pwm, profile, nightState, schedule] = await Promise.all([
+            let [temp, pwm, rpm, profile, nightState, schedule] = await Promise.all([
                 this._readTemp(),
                 this._readPwm(),
+                this._readRpm(),
                 this._readProfile(),
                 this._readNightMode(),
                 this._readSchedule(),
             ]);
 
-            this._applyToUI(temp, pwm, profile, nightState, schedule);
+            // Daemon active = pwm1_enable is 1 (manual control)
+            // Daemon inactive = pwm1_enable is 2 (BIOS auto)
+            let daemonActive = this._readDaemonActive();
+
+            this._applyToUI(temp, pwm, rpm, profile, nightState, schedule, daemonActive);
 
         } catch (e) {
             logError(e, "ZenFanApplet.updateAll");
@@ -364,50 +392,105 @@ class ZenFanApplet extends Applet.TextApplet {
 
     // ── UI update ─────────────────────────────────────────────────────────────
 
-    _applyToUI(temp, pwm, profile, nightState, schedule) {
-        let rpm     = (pwm !== null) ? this.estimateRPM(pwm) : "?";
-        let percent = (pwm !== null) ? Math.round((pwm / 255) * 100) : "?";
+    _applyToUI(temp, pwm, rpm, profile, nightState, schedule, daemonActive) {
+        // ── Daemon state ──────────────────────────────────────────────────────
+        // When daemon is inactive (pwm1_enable=2), fan is under BIOS auto control.
+        // Disable profile/night controls and show BIOS Auto state.
 
+        // Enable/disable profile items
+        this._profileItems.forEach(item => item.setSensitive(daemonActive));
+        this.nightModeItem.setSensitive(daemonActive);
+
+        // ── RPM / percent ─────────────────────────────────────────────────────
+        let percent, rpmVal;
+
+        if (!daemonActive) {
+            // BIOS auto mode — daemon not running
+            percent = "0";
+            // Still show live RPM from tachometer if available
+            if (rpm !== null && rpm <= 15000) {
+                rpmVal = rpm;
+                this._lastRpm = rpm;
+            } else if (this._lastRpm !== null) {
+                rpmVal = this._lastRpm + "~";
+            } else {
+                rpmVal = "N/A";
+            }
+        } else {
+            // Daemon active (manual control mode — tachometer stopped)
+            percent = (pwm !== null) ? Math.round((pwm / 255) * 100) : "?";
+            if (rpm !== null && rpm <= 15000) {
+                // Tachometer reading available (transitional / just switched)
+                rpmVal = rpm;
+                this._lastRpm = rpm;
+            } else if (pwm !== null) {
+                // Estimate from PWM: linear 0–255 → 0–6200, round to nearest 100
+                let estimated = Math.round(((pwm / 255) * 6200) / 100) * 100;
+                rpmVal = estimated + "~";
+            } else if (this._lastRpm !== null) {
+                rpmVal = this._lastRpm + "~";
+            } else {
+                rpmVal = "?";
+            }
+        }
+
+        // ── Labels ────────────────────────────────────────────────────────────
         if (temp !== null) {
             this.graphData.push(temp);
             this.graphData.shift();
             this.graphArea.queue_repaint();
             this.tempLabel.label.text = "Temperature: " + Math.round(temp) + " °C";
-            this.updatePanelDisplay(temp, nightState);
+            this.updatePanelDisplay(temp, nightState, daemonActive);
         }
 
-        if (pwm !== null)
-            this.rpmLabel.label.text = "Fan speed: " + rpm + " RPM (" + percent + "%)";
+        this.rpmLabel.label.text = daemonActive
+            ? "Fan speed: " + rpmVal + " RPM (" + percent + "%)"
+            : "Fan speed: " + rpmVal + " RPM";
 
-        this.profileLabel.label.text = "Profile: " + profile;
+        this.profileLabel.label.text = daemonActive
+            ? "Profile: " + profile
+            : "Profile: BIOS Auto";
 
         let nightLabel = this.nightStateToLabel(nightState);
-        this.set_applet_tooltip(
-            "Profile: "     + profile +
-            "\nFan speed: " + rpm + " RPM (" + percent + "%)" +
-            "\nNight mode: " + nightLabel +
-            "\nQuiet hours: " + schedule
-        );
+        if (daemonActive) {
+            this.set_applet_tooltip(
+                "Profile: "      + profile +
+                "\nFan speed: "  + rpmVal + " RPM (" + percent + "%)" +
+                "\nNight mode: " + nightLabel +
+                "\nQuiet hours: " + schedule
+            );
+        } else {
+            this.set_applet_tooltip(
+                "⚙ Fan control: BIOS Auto (daemon inactive)" +
+                "\nFan speed: "  + rpmVal + " RPM" +
+                "\nProfile controls disabled"
+            );
+        }
 
-        this.updateNightMenuState(nightState, schedule);
+        this.updateNightMenuState(nightState, schedule, daemonActive);
     }
 
     // ── Display helpers ───────────────────────────────────────────────────────
 
-    updatePanelDisplay(temp, nightState) {
+    updatePanelDisplay(temp, nightState, daemonActive) {
         let color = "#157510", icon = "❄";
         if      (temp >= 75) { color = "#a92828"; icon = "🔥"; }
         else if (temp >= 65) { color = "#f57900"; icon = "🌡"; }
         else if (temp >= 55) { color = "#885c14"; }
 
-        let moon = (nightState === "on" || nightState === "auto-on") ? " 🌙" : "";
-        this.set_applet_label(`${icon} ${Math.round(temp)}°${moon}`);
+        let moon   = (nightState === "on" || nightState === "auto-on") ? " 🌙" : "";
+        let bios   = daemonActive ? "" : " ⚙";   // gear = BIOS auto
+        this.set_applet_label(`${icon} ${Math.round(temp)}°${moon}${bios}`);
         if (this._applet_label)
             this._applet_label.set_style(`color: ${color}; font-weight: bold;`);
     }
 
-    updateNightMenuState(state, schedule) {
+    updateNightMenuState(state, schedule, daemonActive) {
         if (!this.nightModeItem) return;
+        if (!daemonActive) {
+            this.nightModeItem.label.text = "Night acoustic mode: ⚙ BIOS Auto";
+            return;
+        }
         this.nightModeItem.label.text =
             "Night acoustic mode: " + this.nightStateToLabel(state) +
             "  (" + schedule + ")";
@@ -420,8 +503,6 @@ class ZenFanApplet extends Applet.TextApplet {
         if (state === "auto-off") return "🕒 Auto (daytime)";
         return "?";
     }
-
-    estimateRPM(pwm) { return Math.round((pwm / 255) * 6200); }
 
     formatHour(h) {
         let n = parseInt(h);

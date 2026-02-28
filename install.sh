@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Zenfan install script
+# Zenfan install script v1.3
 # Installs all components for ASUS Zenbook UX31e on LMDE 7 / Cinnamon
 # Run as a normal user with sudo privileges: bash install.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ CONF_DIR="/etc"
 POLKIT_DIR="/usr/share/polkit-1/actions"
 SUDOERS_DIR="/etc/sudoers.d"
 SYSTEMD_DIR="/lib/systemd/system"
+VERSION="1.3"
 
 GREEN="\033[0;32m"
 YELLOW="\033[1;33m"
@@ -27,14 +28,15 @@ confirm() { read -r -p "$* [y/N] " ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 
 # ── Preflight checks ──────────────────────────────────────────────────────────
 
-info "Zenfan installer starting..."
+echo ""
+echo "  Zenfan v${VERSION} — Adaptive fan control for ASUS Zenbook UX31e"
+echo "  ─────────────────────────────────────────────────────────────────"
+echo ""
 
-# Must not run as root directly
 if [[ "$EUID" -eq 0 ]]; then
     error "Do not run as root. Run as your normal user: bash install.sh"
 fi
 
-# Check sudo access
 if ! sudo -v; then
     error "sudo access required"
 fi
@@ -48,10 +50,11 @@ fi
 # Detect hwmon paths
 TEMP_PATH=$(find /sys/class/hwmon/*/temp1_input 2>/dev/null | head -1)
 PWM_PATH=$(find /sys/class/hwmon/*/pwm1 2>/dev/null | head -1)
+RPM_PATH=$(find /sys/class/hwmon/*/fan1_input 2>/dev/null | head -1)
 
 if [[ -z "$TEMP_PATH" || -z "$PWM_PATH" ]]; then
     warn "Could not auto-detect hwmon paths."
-    warn "You may need to edit /usr/local/bin/zenbook-fan.sh and applet.js manually."
+    warn "You may need to edit /usr/local/bin/zenbook-fan.sh and applet/applet.js manually."
 else
     HWMON_TEMP=$(dirname "$TEMP_PATH" | xargs basename)
     HWMON_PWM=$(dirname "$PWM_PATH" | xargs basename)
@@ -59,11 +62,12 @@ else
         warn "Detected hwmon paths differ from defaults:"
         warn "  TEMP: $TEMP_PATH  (default: hwmon2)"
         warn "  PWM:  $PWM_PATH  (default: hwmon4)"
-        warn "Update SYS paths in bin/zenbook-fan.sh and applet/applet.js if needed."
+        [[ -n "$RPM_PATH" ]] && warn "  RPM:  $RPM_PATH"
+        warn "Update SYS paths in bin/zenbook-fan.sh and applet/applet.js before installing."
+        confirm "Continue anyway?" || exit 0
     fi
 fi
 
-echo ""
 info "This will install:"
 echo "   • Binaries       → $BIN_DIR"
 echo "   • Config         → $CONF_DIR/zenfan.conf"
@@ -129,11 +133,12 @@ info "Applet installed: $APPLET_DIR"
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
-info "Installation complete!"
+info "Zenfan v${VERSION} installed successfully!"
 echo ""
 echo "  Next steps:"
 echo "  1. Add the applet to your Cinnamon panel:"
 echo "     Right-click panel → Applets → search 'Zenfan' → Add"
 echo "  2. Check service status:  systemctl status zenfan"
 echo "  3. Check logs:            journalctl -u zenfan -f"
+echo "  4. Switch profiles:       zenfan quiet|balanced|performance"
 echo ""

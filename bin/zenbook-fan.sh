@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Zenfan — adaptive thermal control for ASUS Zenbook UX31e
-# Version: 1.2 (Unified config /etc/zenfan.conf)
+# Version: 1.3
 # --------------------------------------------------------
 # This daemon continuously monitors CPU temperature and system load,
 # then dynamically adjusts fan PWM for:
@@ -49,7 +49,7 @@ FORCE_COOL_PWM=220     # Strong cooling step
 # Automatically disabled when temperature becomes unsafe.
 NIGHT_START=22              # Quiet period start hour
 NIGHT_END=7                 # Quiet period end hour
-NIGHT_MAX_PWM=120           # Maximum fan power allowed at night
+NIGHT_MAX_PWM=150           # Maximum fan power allowed at night
 NIGHT_OVERRIDE_TEMP=72      # Disable quiet mode above this temp
 
 ### --- Control stability parameters ---
@@ -59,7 +59,7 @@ MAX_OFFSET=15   # Learning sensitivity limit
 
 ### --- Runtime variables ---
 LAST_PWM=100
-LAST_TEMP=0
+LAST_TEMP=$(( $(cat /sys/class/hwmon/hwmon2/temp1_input 2>/dev/null || echo 50000) / 1000 ))
 LEARN_OFFSET=0
 PROFILE="balanced"  # Fallback
 CONF_MTIME=0        # Single mtime cache for unified conf
@@ -76,11 +76,13 @@ log() {
 ### --- Cleanup on exit/term ---
 cleanup() {
     log info "Shutting down: Restoring auto fan control"
-    echo 2 > "$ENABLE" 2>/dev/null || log warning "Failed to restore auto mode"
-    rm -f "$STATE_FILE" 2>/dev/null
+    echo 2 > "$ENABLE" 2>/dev/null || true
+    # Belt-and-suspenders: try tee as fallback
+    echo 2 | tee "$ENABLE" > /dev/null 2>&1 || true
+    rm -f "$STATE_FILE" 2>/dev/null || true
     exit 0
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT INT TERM ERR
 
 ### --- Safe file read with fallback ---
 safe_read() {
@@ -160,7 +162,7 @@ while true; do
     # Read temperature with retry/fallback
     RAW=$(cat "$TEMP" 2>/dev/null) || RAW=""
     if [[ -z "$RAW" ]]; then
-        ((ERROR_COUNT++))
+        ((ERROR_COUNT++)) || true
         log warning "Failed to read temp (attempt $ERROR_COUNT)"
         if [[ $ERROR_COUNT -ge $MAX_ERRORS ]]; then
             log error "Too many read errors. Exiting."
@@ -279,9 +281,9 @@ while true; do
     # Learning mechanism
     ################################################################
     if (( T > 75 )); then
-        ((LEARN_OFFSET++))
+        ((LEARN_OFFSET++)) || true
     elif (( T < 50 )); then
-        ((LEARN_OFFSET--))
+        ((LEARN_OFFSET--)) || true
     fi
     (( LEARN_OFFSET > MAX_OFFSET )) && LEARN_OFFSET=$MAX_OFFSET
     (( LEARN_OFFSET < -5 )) && LEARN_OFFSET=-5

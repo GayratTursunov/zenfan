@@ -19,8 +19,6 @@ sudo install -m 755 bin/zenfan-config-gui       /usr/local/bin/zenfan-config-gui
 sudo install -m 644 config/zenfan.conf /etc/zenfan.conf
 ```
 
-Edit `/etc/zenfan.conf` to set your preferred defaults before starting the daemon.
-
 ## 3. Install sudoers rule
 
 ```bash
@@ -33,12 +31,7 @@ sudo install -m 440 config/zenfan-sudoers /etc/sudoers.d/zenfan
 ```bash
 sudo install -m 644 config/org.zenfan.policy /usr/share/polkit-1/actions/org.zenfan.policy
 sudo systemctl reload polkit
-```
-
-Verify the action is registered:
-```bash
-pkaction --action-id org.zenfan.write-conf --verbose
-# Should show: implicit active: yes
+pkaction --action-id org.zenfan.write-conf --verbose   # should show implicit active: yes
 ```
 
 ## 5. Install and start systemd service
@@ -48,12 +41,7 @@ sudo install -m 644 systemd/zenfan.service /lib/systemd/system/zenfan.service
 sudo systemctl daemon-reload
 sudo systemctl enable zenfan.service
 sudo systemctl start zenfan.service
-```
-
-Check it started correctly:
-```bash
 systemctl status zenfan
-journalctl -u zenfan -n 20
 ```
 
 ## 6. Install Cinnamon applet
@@ -65,23 +53,14 @@ install -m 644 applet/applet.js     "$APPLET_DIR/applet.js"
 install -m 644 applet/metadata.json "$APPLET_DIR/metadata.json"
 ```
 
-Then add to panel:
-> Right-click panel → Applets → search **Zenfan** → Add to panel
+Then: Right-click panel → Applets → search **Zenfan** → Add to panel
 
 ## 7. Verify
 
 ```bash
-# Check service
 systemctl status zenfan
-
-# Check profile switching (no password prompt)
-zenfan quiet
-zenfan balanced
-
-# Check night mode
+zenfan quiet && zenfan balanced     # no password prompt
 zenfan-night status
 zenfan-night-effective
-
-# Launch config GUI
 zenfan-config-gui
 ```

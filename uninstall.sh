@@ -14,7 +14,6 @@ NC="\033[0m"
 
 info() { echo -e "${GREEN}[-]${NC} $*"; }
 warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-
 confirm() { read -r -p "$* [y/N] " ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 
 if [[ "$EUID" -eq 0 ]]; then
@@ -32,6 +31,12 @@ sudo systemctl stop zenfan.service    2>/dev/null || true
 sudo systemctl disable zenfan.service 2>/dev/null || true
 sudo rm -f /lib/systemd/system/zenfan.service
 sudo systemctl daemon-reload
+
+# Restore auto fan control before removing binaries
+info "Restoring BIOS auto fan control..."
+for pwm_enable in /sys/class/hwmon/*/pwm1_enable; do
+    echo 2 | sudo tee "$pwm_enable" > /dev/null 2>&1 || true
+done
 
 # Remove binaries
 info "Removing binaries..."
@@ -61,11 +66,5 @@ else
     warn "Config preserved at /etc/zenfan.conf"
 fi
 
-# Restore auto fan control
-info "Restoring automatic fan control..."
-for pwm_enable in /sys/class/hwmon/*/pwm1_enable; do
-    echo 2 | sudo tee "$pwm_enable" > /dev/null 2>&1 || true
-done
-
 echo ""
-info "Zenfan uninstalled."
+info "Zenfan uninstalled. Fan control returned to BIOS."
