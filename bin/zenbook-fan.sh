@@ -244,7 +244,11 @@ while true; do
     ################################################################
     # Night acoustic limiter
     ################################################################
-    HOUR=$(date +%H)
+    # Force base-10: date +%H and conf values may be zero-padded (08, 09),
+    # which bash arithmetic would otherwise reject as invalid octal.
+    HOUR=$(( 10#$(date +%H) ))
+    NIGHT_START=$(( 10#$NIGHT_START ))
+    NIGHT_END=$(( 10#$NIGHT_END ))
     IN_NIGHT=0
     if (( NIGHT_START > NIGHT_END )); then
         (( HOUR >= NIGHT_START || HOUR < NIGHT_END )) && IN_NIGHT=1

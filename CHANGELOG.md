@@ -4,6 +4,17 @@ All notable changes to Zenfan are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Daemon octal-hour fault (completes the 1.3 fix)** — `bin/zenbook-fan.sh` used `HOUR=$(date +%H)` inside `(( ))` without the base-10 guard, so at `08:xx`/`09:xx` bash raised `value too great for base` every 3 s and silently left the night limiter off (`IN_NIGHT=0`). Because the expression is a `(( … )) && …` short-circuit, `set -e`/`trap ERR` did not fire, so it logged rather than crashed. Added `$(( 10# … ))` for `HOUR`, `NIGHT_START`, and `NIGHT_END`, matching `zenfan-night-effective`.
+- **Applet timer leak** — `applet/applet.js` registered a 1 s `GLib.timeout_add_seconds` without storing the source id and had no teardown hook, so the loop kept firing against a destroyed applet (Gjs-CRITICAL) after removal or a Cinnamon reload. The source id is now stored and removed in `on_applet_removed_from_panel()`.
+
+### Added
+- **Code review + optimization docs** — `zenfan_code_review_guide.md` (staged review guide) and `zenfan_new_requirements.md` (staged optimization requirements R1–R11 with before/after code), targeting LMDE 7 / Cinnamon 6.6 / cjs-mozjs128.
+
+---
+
 ## [1.3.1] - 2026-06-14
 
 ### Fixed
@@ -28,7 +39,7 @@ All notable changes to Zenfan are documented here.
 - **Daemon crash on startup** — `LAST_TEMP=0` caused `RISING=current_temp` on first cycle, falsely triggering rapid-rise protection and pushing PWM far beyond maximum. Fixed by initialising `LAST_TEMP` from the actual sensor reading at startup
 - **`set -e` killing daemon on arithmetic** — `((LEARN_OFFSET++))` and `((ERROR_COUNT++))` return exit code 1 when the result is 0, which `set -euo pipefail` treats as failure. Fixed with `|| true`
 - **PWM percent calculation** — corrected from `/255` to `/200` then back to `/255` after hardware testing confirmed the ASUS chip accepts and uses the full 0–255 range; `sensors` display of 200=100% was misleading (it uses its own scaling)
-- **Octal hour parsing** — `date +%H` returns zero-padded values (`08`, `09`) which bash arithmetic treats as invalid octal. Fixed with `$(( 10#$(date +%H) ))` in `zenfan-night-effective` and `zenbook-fan.sh`
+- **Octal hour parsing** — `date +%H` returns zero-padded values (`08`, `09`) which bash arithmetic treats as invalid octal. Fixed with `$(( 10#$(date +%H) ))` in `zenfan-night-effective`. *(Correction: the matching guard in `zenbook-fan.sh` was missed at the time — completed in [Unreleased].)*
 
 ### Changed
 - `_profileItems` stored as array — enables clean `setSensitive()` calls without DOM traversal

@@ -512,10 +512,19 @@ class ZenFanApplet extends Applet.TextApplet {
     // ── Auto-refresh ──────────────────────────────────────────────────────────
 
     startAutoRefresh() {
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+        this._refreshId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
             this.updateAll();          // async — returned Promise intentionally ignored
             return GLib.SOURCE_CONTINUE;
         });
+    }
+
+    // Cinnamon lifecycle: remove the recurring timer so it does not keep firing
+    // against a destroyed applet after removal / panel reload (avoids Gjs-CRITICAL).
+    on_applet_removed_from_panel() {
+        if (this._refreshId) {
+            GLib.source_remove(this._refreshId);
+            this._refreshId = 0;
+        }
     }
 
     on_applet_clicked() { this.menu.toggle(); }
