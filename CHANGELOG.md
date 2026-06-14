@@ -4,7 +4,7 @@ All notable changes to Zenfan are documented here.
 
 ---
 
-## [Unreleased]
+## [1.3.2] - 2026-06-14
 
 ### Fixed
 - **Daemon octal-hour fault (completes the 1.3 fix)** — `bin/zenbook-fan.sh` used `HOUR=$(date +%H)` inside `(( ))` without the base-10 guard, so at `08:xx`/`09:xx` bash raised `value too great for base` every 3 s and silently left the night limiter off (`IN_NIGHT=0`). Because the expression is a `(( … )) && …` short-circuit, `set -e`/`trap ERR` did not fire, so it logged rather than crashed. Added `$(( 10# … ))` for `HOUR`, `NIGHT_START`, and `NIGHT_END`, matching `zenfan-night-effective`.
