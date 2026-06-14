@@ -4,6 +4,19 @@ All notable changes to Zenfan are documented here.
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Applet: zero-subprocess refresh (R3)** — the panel no longer shells out to `zenfan status`, `zenfan-night status`, or `zenfan-night-effective` every second. Profile, night override, and schedule are read directly from `/etc/zenfan.conf` and `/tmp/zenfan-night-mode`, with the night schedule resolved in-process. Steady-state refresh now spawns **no** processes (was ~2–3 forks/second).
+- **Applet: graph repaints only while the menu is open (R4)** — the Cairo temperature graph repaints only when the popup is visible, and a refresh is triggered on menu open.
+- **Applet + daemon: hwmon paths resolved by chip name (R7)** — `coretemp`/`asus` are located via `/sys/class/hwmon/*/name` at startup (falling back to the previous fixed indices), surviving hwmon index changes across kernel/driver updates.
+- **Daemon: fewer per-loop process spawns (R5/R6)** — load is read with bash builtins instead of `awk`, the hour with `printf '%(%H)T'` instead of `date`, and `pwm1_enable` is only rewritten when it has drifted from `1`.
+
+### Fixed
+- **Applet: deprecated `imports.byteArray` (R8)** — replaced with `TextDecoder`, the modern cjs/mozjs128 decode path, removing the deprecation warning.
+
+---
+
 ## [1.3.2] - 2026-06-14
 
 ### Fixed

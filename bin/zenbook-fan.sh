@@ -29,9 +29,22 @@ set -euo pipefail  # Strict mode: exit on error, unset vars, pipe failures
 umask 077          # Secure temp files
 
 ### --- Hardware interfaces ---
+# Defaults (fallback); resolved by chip name below since hwmon indices can shift
+# across kernel upgrades or driver load order.
 PWM="/sys/class/hwmon/hwmon4/pwm1"            # Fan control output
 ENABLE="/sys/class/hwmon/hwmon4/pwm1_enable"  # Enable manual control
 TEMP="/sys/class/hwmon/hwmon2/temp1_input"    # CPU temperature (millidegrees C)
+
+# Print the hwmonN dir (with trailing /) whose `name` matches $1; non-zero if none.
+hwmon_by_name() {
+    local d
+    for d in /sys/class/hwmon/hwmon*/; do
+        [[ "$(<"${d}name" 2>/dev/null)" == "$1" ]] && { printf '%s' "$d"; return 0; }
+    done
+    return 1
+}
+if _tdir=$(hwmon_by_name coretemp); then TEMP="${_tdir}temp1_input"; fi
+if _pdir=$(hwmon_by_name asus); then PWM="${_pdir}pwm1"; ENABLE="${_pdir}pwm1_enable"; fi
 
 ### --- State & configuration files ---
 CONF="/etc/zenfan.conf"                # Unified config: profile + night schedule
@@ -59,7 +72,7 @@ MAX_OFFSET=15   # Learning sensitivity limit
 
 ### --- Runtime variables ---
 LAST_PWM=100
-LAST_TEMP=$(( $(cat /sys/class/hwmon/hwmon2/temp1_input 2>/dev/null || echo 50000) / 1000 ))
+LAST_TEMP=$(( $(cat "$TEMP" 2>/dev/null || echo 50000) / 1000 ))
 LEARN_OFFSET=0
 PROFILE="balanced"  # Fallback
 CONF_MTIME=0        # Single mtime cache for unified conf
@@ -154,7 +167,7 @@ fi
 
 ### --- Main control loop ---
 while true; do
-    echo 1 > "$ENABLE"  # Re-enable if needed (redundancy)
+    [[ "$(<"$ENABLE")" == 1 ]] || echo 1 > "$ENABLE"  # Re-enable only if it drifted
 
     # Load unified config if changed (profile + night schedule in one shot)
     load_config
@@ -174,8 +187,9 @@ while true; do
         T=$((RAW / 1000))
     fi
 
-    # Read load (1-min avg, integer)
-    LOAD=$(awk '{print int($1)}' /proc/loadavg)
+    # Read load (1-min avg, integer part) via bash builtins — no awk fork
+    read -r LOAD _ < /proc/loadavg
+    LOAD=${LOAD%%.*}
 
     ################################################################
     # Base thermal curves
@@ -244,9 +258,10 @@ while true; do
     ################################################################
     # Night acoustic limiter
     ################################################################
-    # Force base-10: date +%H and conf values may be zero-padded (08, 09),
-    # which bash arithmetic would otherwise reject as invalid octal.
-    HOUR=$(( 10#$(date +%H) ))
+    # Current hour via bash builtin (no date fork). Force base-10: %H and conf
+    # values may be zero-padded (08, 09), which bash arithmetic rejects as octal.
+    printf -v HOUR '%(%H)T' -1
+    HOUR=$(( 10#$HOUR ))
     NIGHT_START=$(( 10#$NIGHT_START ))
     NIGHT_END=$(( 10#$NIGHT_END ))
     IN_NIGHT=0

@@ -7,70 +7,48 @@ const St        = imports.gi.St;
 const Cairo     = imports.cairo;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Promisify once at module load — patches the prototype so every instance
-// gets await-able versions of these GIO async methods.
-// ─────────────────────────────────────────────────────────────────────────────
-
-Gio._promisify(Gio.Subprocess.prototype, "communicate_utf8_async", "communicate_utf8_finish");
-// Gio.File promisify removed — all file reads use GLib.file_get_contents (see readSysFile)
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Absolute binary paths — Cinnamon's applet environment does not inherit the
-// user's $PATH, so we never rely on name resolution.
+// user's $PATH. Used only for user-initiated writes (profile / night-mode /
+// config GUI); all status is read from files in-process, no subprocess spawns.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BIN = {
-    zenfan:            "/usr/local/bin/zenfan",
-    zenfanNight:       "/usr/local/bin/zenfan-night",
-    zenfanNightEff:    "/usr/local/bin/zenfan-night-effective",
-    zenfanConfigGui:   "/usr/local/bin/zenfan-config-gui",
+    zenfan:          "/usr/local/bin/zenfan",
+    zenfanNight:     "/usr/local/bin/zenfan-night",
+    zenfanConfigGui: "/usr/local/bin/zenfan-config-gui",
 };
 
-// sysfs paths — no subprocess needed, plain file reads
+// sysfs paths — plain file reads, no subprocess. These hwmon indices are only
+// defaults; the constructor re-resolves them by chip name at startup because
+// indices (hwmon2/hwmon4) can change across kernel upgrades or driver load order.
 const SYS = {
     temp:      "/sys/class/hwmon/hwmon2/temp1_input",
     pwm:       "/sys/class/hwmon/hwmon4/pwm1",
     pwmEnable: "/sys/class/hwmon/hwmon4/pwm1_enable",
     rpm:       "/sys/class/hwmon/hwmon4/fan1_input",
 };
-const CONF = "/etc/zenfan.conf";
+const CONF            = "/etc/zenfan.conf";
+const NIGHT_MODE_FILE = "/tmp/zenfan-night-mode";
+
+const _decoder = new TextDecoder();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Async primitives
+// File reads (no process spawns)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Spawn an absolute-path binary and return trimmed stdout.
- * Uses a shell so sudo and env are handled correctly.
- * Throws on spawn failure; resolves even on non-zero exit
- * (callers decide what to do with unexpected output).
- *
- * @param {string[]} argv   Full argv, e.g. [BIN.zenfan, "status"]
- * @returns {Promise<string>}
- */
-async function runAsync(argv) {
-    const proc = new Gio.Subprocess({
-        argv,
-        flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
-    });
-    proc.init(null);
-    const [stdout] = await proc.communicate_utf8_async(null, null);
-    return (stdout ?? "").trim();
-}
 
 /**
  * Read a sysfs / config file without spawning any process.
  * @param {string} path
- * @returns {Promise<string>}
+ * @returns {string|null}
  */
 function readSysFile(path) {
-    // sysfs / procfs files are kernel virtual — reads are instantaneous,
-    // so sync GLib.file_get_contents is perfectly safe and avoids any
-    // Uint8Array / GBytes conversion ambiguity from the async API.
+    // sysfs / procfs files are kernel virtual — reads are instantaneous, so a
+    // sync read is safe. GLib.file_get_contents returns a Uint8Array under
+    // cjs/mozjs128; TextDecoder is the modern, non-deprecated decode path.
     try {
         const [ok, raw] = GLib.file_get_contents(path);
         if (!ok) return null;
-        return imports.byteArray.toString(raw).trim();
+        return _decoder.decode(raw).trim();
     } catch { return null; }
 }
 
@@ -88,19 +66,44 @@ class ZenFanApplet extends Applet.TextApplet {
         this.graphData = new Array(60).fill(50);
         this._lastRpm  = null;  // cache last known RPM for manual control mode
 
+        // Resolve hwmon paths by chip name — indices (hwmon2/hwmon4) are assigned
+        // at boot and can shift across kernel upgrades / driver load order.
+        const tempBase = this._resolveHwmon("coretemp");
+        const pwmBase  = this._resolveHwmon("asus");
+        if (tempBase) SYS.temp = tempBase + "/temp1_input";
+        if (pwmBase) {
+            SYS.pwm       = pwmBase + "/pwm1";
+            SYS.pwmEnable = pwmBase + "/pwm1_enable";
+            SYS.rpm       = pwmBase + "/fan1_input";
+        }
+
         this.menuManager = new PopupMenu.PopupMenuManager(this);
         this.menu        = new Applet.AppletPopupMenu(this, orientation);
         this.menuManager.addMenu(this.menu);
 
-        this._scheduleCache    = null;
-        this._scheduleLastRead = 0;
-
-        // Prevents overlapping refresh cycles
-        this._refreshPending = false;
-
         this.buildMenu();
+        // Refresh immediately when the menu opens; the graph is only repainted
+        // while the menu is visible (see _applyToUI).
+        this.menu.connect("open-state-changed", (m, open) => { if (open) this.updateAll(); });
         this.updateAll();
         this.startAutoRefresh();
+    }
+
+    // Find the hwmon directory whose `name` matches (e.g. "coretemp", "asus").
+    // Returns the base path (no trailing slash) or null.
+    _resolveHwmon(name) {
+        try {
+            const base = "/sys/class/hwmon";
+            const en = Gio.File.new_for_path(base)
+                .enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE, null);
+            let info, found = null;
+            while ((info = en.next_file(null)) !== null) {
+                const child = base + "/" + info.get_name();
+                if ((readSysFile(child + "/name") || "") === name) { found = child; break; }
+            }
+            en.close(null);
+            return found;
+        } catch { return null; }
     }
 
     // ── Menu ─────────────────────────────────────────────────────────────────
@@ -286,7 +289,7 @@ class ZenFanApplet extends Applet.TextApplet {
 
     // ── Async readers ─────────────────────────────────────────────────────────
 
-    async _readTemp() {
+    _readTemp() {
         try {
             let raw = readSysFile(SYS.temp);
             let val = parseInt(raw);
@@ -294,7 +297,7 @@ class ZenFanApplet extends Applet.TextApplet {
         } catch { return null; }
     }
 
-    async _readPwm() {
+    _readPwm() {
         try {
             let raw = readSysFile(SYS.pwm);
             let val = parseInt(raw);
@@ -302,7 +305,7 @@ class ZenFanApplet extends Applet.TextApplet {
         } catch { return null; }
     }
 
-    async _readRpm() {
+    _readRpm() {
         try {
             let raw = readSysFile(SYS.rpm);
             let val = parseInt(raw);
@@ -321,72 +324,50 @@ class ZenFanApplet extends Applet.TextApplet {
         } catch { return false; }
     }
 
-    async _readProfile() {
-        try {
-            let out = await runAsync([BIN.zenfan, "status"]);
-            // e.g. "Current profile: balanced"
-            return out.replace("Current profile:", "").trim() || "?";
-        } catch { return "?"; }
-    }
-
-    async _readSchedule() {
-        let now = Date.now();
-        if (this._scheduleCache && now - this._scheduleLastRead < 10000)
-            return this._scheduleCache;
-
-        try {
-            let text  = readSysFile(CONF);
-            let start = 22, end = 7;
-            for (let line of text.split("\n")) {
-                if (line.startsWith("NIGHT_START=")) start = parseInt(line.split("=")[1]);
-                if (line.startsWith("NIGHT_END="))   end   = parseInt(line.split("=")[1]);
+    // Parse /etc/zenfan.conf in-process (no subprocess). Cheap kernel-cached read.
+    _readConfig() {
+        let profile = "balanced", start = 22, end = 7;
+        const text = readSysFile(CONF);
+        if (text) {
+            for (const line of text.split("\n")) {
+                if (line.startsWith("PROFILE="))          profile = line.slice(8).trim() || profile;
+                else if (line.startsWith("NIGHT_START=")) { const v = parseInt(line.split("=")[1]); if (!isNaN(v)) start = v; }
+                else if (line.startsWith("NIGHT_END="))   { const v = parseInt(line.split("=")[1]); if (!isNaN(v)) end   = v; }
             }
-            this._scheduleCache    = this.formatHour(start) + " → " + this.formatHour(end);
-            this._scheduleLastRead = now;
-        } catch {
-            this._scheduleCache = "22:00 → 07:00";
         }
-        return this._scheduleCache;
+        return { profile, start, end };
     }
 
-    async _readNightMode() {
-        try {
-            let mode = await runAsync([BIN.zenfanNight, "status"]);
-            // Returns "on", "off", or "auto"
-            if (mode === "on" || mode === "off") return mode;
-            // "auto" — resolve which branch is active right now
-            let effective = await runAsync([BIN.zenfanNightEff]);
-            return effective || "unknown";   // "auto-on" or "auto-off"
-        } catch { return "unknown"; }
+    // In-process port of zenfan-night-effective (handles midnight wrap-around).
+    _nightEffective(start, end) {
+        const h = new Date().getHours();
+        const inNight = (start > end) ? (h >= start || h < end) : (h >= start && h < end);
+        return inNight ? "auto-on" : "auto-off";
+    }
+
+    // Mirror of `zenfan-night status` + resolver, reading the override file directly.
+    _readNightMode(start, end) {
+        const mode = (readSysFile(NIGHT_MODE_FILE) || "auto").trim();
+        if (mode === "on" || mode === "off") return mode;
+        return this._nightEffective(start, end);
     }
 
     // ── Refresh orchestration ─────────────────────────────────────────────────
 
-    async updateAll() {
-        if (this._refreshPending) return;
-        this._refreshPending = true;
-
+    updateAll() {
         try {
-            // All five reads run concurrently — nothing blocks the main thread
-            let [temp, pwm, rpm, profile, nightState, schedule] = await Promise.all([
-                this._readTemp(),
-                this._readPwm(),
-                this._readRpm(),
-                this._readProfile(),
-                this._readNightMode(),
-                this._readSchedule(),
-            ]);
+            // All reads are in-process file reads now — zero subprocess spawns.
+            const cfg          = this._readConfig();           // { profile, start, end }
+            const temp         = this._readTemp();
+            const pwm          = this._readPwm();
+            const rpm          = this._readRpm();
+            const daemonActive = this._readDaemonActive();     // pwm1_enable: 1=manual, 2=BIOS auto
+            const nightState   = this._readNightMode(cfg.start, cfg.end);
+            const schedule     = this.formatHour(cfg.start) + " → " + this.formatHour(cfg.end);
 
-            // Daemon active = pwm1_enable is 1 (manual control)
-            // Daemon inactive = pwm1_enable is 2 (BIOS auto)
-            let daemonActive = this._readDaemonActive();
-
-            this._applyToUI(temp, pwm, rpm, profile, nightState, schedule, daemonActive);
-
+            this._applyToUI(temp, pwm, rpm, cfg.profile, nightState, schedule, daemonActive);
         } catch (e) {
             logError(e, "ZenFanApplet.updateAll");
-        } finally {
-            this._refreshPending = false;
         }
     }
 
@@ -438,7 +419,8 @@ class ZenFanApplet extends Applet.TextApplet {
         if (temp !== null) {
             this.graphData.push(temp);
             this.graphData.shift();
-            this.graphArea.queue_repaint();
+            // Only repaint the Cairo graph while the menu is actually visible.
+            if (this.menu.isOpen) this.graphArea.queue_repaint();
             this.tempLabel.label.text = "Temperature: " + Math.round(temp) + " °C";
             this.updatePanelDisplay(temp, nightState, daemonActive);
         }
