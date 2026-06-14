@@ -6,6 +6,10 @@ All notable changes to Zenfan are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Applet settings (R9)** — a Cinnamon settings schema (`applet/settings-schema.json`) exposes the **panel refresh interval** (1–10 s) and the **hwmon chip names** (`coretemp`/`asus`) via the applet's Configure dialog, bound with `Settings.AppletSettings`. Changing the interval re-arms the timer live; changing a chip name re-resolves the sysfs paths. The settings provider is released in `on_applet_removed_from_panel()`.
+- **Lint gating (R11)** — `tools/lint.sh` checks bash/Python/JSON/JS syntax and runs `shellcheck` (errors gate, warnings advisory); a GitHub Actions workflow (`.github/workflows/ci.yml`) runs it on every push/PR, and an opt-in pre-commit hook (`.githooks/pre-commit`, enabled with `git config core.hooksPath .githooks`) runs it locally.
+
 ### Changed
 - **Applet: zero-subprocess refresh (R3)** — the panel no longer shells out to `zenfan status`, `zenfan-night status`, or `zenfan-night-effective` every second. Profile, night override, and schedule are read directly from `/etc/zenfan.conf` and `/tmp/zenfan-night-mode`, with the night schedule resolved in-process. Steady-state refresh now spawns **no** processes (was ~2–3 forks/second).
 - **Applet: graph repaints only while the menu is open (R4)** — the Cairo temperature graph repaints only when the popup is visible, and a refresh is triggered on menu open.

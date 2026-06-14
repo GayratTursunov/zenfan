@@ -49,8 +49,9 @@ systemctl status zenfan
 ```bash
 APPLET_DIR="$HOME/.local/share/cinnamon/applets/zenfan@ux31e"
 mkdir -p "$APPLET_DIR"
-install -m 644 applet/applet.js     "$APPLET_DIR/applet.js"
-install -m 644 applet/metadata.json "$APPLET_DIR/metadata.json"
+install -m 644 applet/applet.js            "$APPLET_DIR/applet.js"
+install -m 644 applet/metadata.json        "$APPLET_DIR/metadata.json"
+install -m 644 applet/settings-schema.json "$APPLET_DIR/settings-schema.json"
 ```
 
 Then: Right-click panel → Applets → search **Zenfan** → Add to panel

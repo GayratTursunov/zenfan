@@ -1,0 +1,32 @@
+{
+    "head-display": {
+        "type": "header",
+        "description": "Display"
+    },
+    "refresh-interval": {
+        "type": "spinbutton",
+        "default": 1,
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "units": "seconds",
+        "description": "Panel refresh interval",
+        "tooltip": "How often the temperature, fan speed and panel label refresh. Higher = lower idle CPU/power."
+    },
+    "head-hardware": {
+        "type": "header",
+        "description": "Hardware (advanced)"
+    },
+    "temp-chip-name": {
+        "type": "entry",
+        "default": "coretemp",
+        "description": "CPU temperature hwmon chip",
+        "tooltip": "The /sys/class/hwmon/*/name value of the CPU temperature sensor. Default: coretemp. Leave as-is unless detection fails."
+    },
+    "pwm-chip-name": {
+        "type": "entry",
+        "default": "asus",
+        "description": "Fan controller hwmon chip",
+        "tooltip": "The /sys/class/hwmon/*/name value of the fan PWM controller. Default: asus. Leave as-is unless detection fails."
+    }
+}

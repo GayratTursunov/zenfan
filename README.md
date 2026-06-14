@@ -183,6 +183,32 @@ See [docs/HARDWARE.md](docs/HARDWARE.md) for detection instructions if your indi
 
 ---
 
+## Settings
+
+Right-click the applet → **Configure** (or Applets → Zenfan → gear icon) to set:
+
+- **Panel refresh interval** (1–10 s) — higher means lower idle CPU/power
+- **hwmon chip names** (advanced) — override the `coretemp` / `asus` auto-detection if your hardware differs
+
+---
+
+## Development
+
+Lint everything (bash syntax, Python compile, JSON, JS syntax, shellcheck):
+
+```bash
+bash tools/lint.sh
+```
+
+The same gate runs in CI on every push/PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+To run it automatically before each commit:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+---
+
 ## Uninstall
 
 ```bash

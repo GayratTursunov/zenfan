@@ -1,6 +1,7 @@
 const Applet    = imports.ui.applet;
 const PopupMenu = imports.ui.popupMenu;
 const Util      = imports.misc.util;
+const Settings  = imports.ui.settings;
 const GLib      = imports.gi.GLib;
 const Gio       = imports.gi.Gio;
 const St        = imports.gi.St;
@@ -66,16 +67,17 @@ class ZenFanApplet extends Applet.TextApplet {
         this.graphData = new Array(60).fill(50);
         this._lastRpm  = null;  // cache last known RPM for manual control mode
 
+        // User settings (configure via the applet's gear): refresh interval and
+        // the hwmon chip names. bind() sets this.<prop> immediately and re-fires
+        // the callback on change.
+        this.settings = new Settings.AppletSettings(this, metadata.uuid, instanceId);
+        this.settings.bind("refresh-interval", "refreshInterval", () => this._restartAutoRefresh());
+        this.settings.bind("temp-chip-name",   "tempChipName",   () => this._applyHwmonPaths());
+        this.settings.bind("pwm-chip-name",    "pwmChipName",    () => this._applyHwmonPaths());
+
         // Resolve hwmon paths by chip name — indices (hwmon2/hwmon4) are assigned
         // at boot and can shift across kernel upgrades / driver load order.
-        const tempBase = this._resolveHwmon("coretemp");
-        const pwmBase  = this._resolveHwmon("asus");
-        if (tempBase) SYS.temp = tempBase + "/temp1_input";
-        if (pwmBase) {
-            SYS.pwm       = pwmBase + "/pwm1";
-            SYS.pwmEnable = pwmBase + "/pwm1_enable";
-            SYS.rpm       = pwmBase + "/fan1_input";
-        }
+        this._applyHwmonPaths();
 
         this.menuManager = new PopupMenu.PopupMenuManager(this);
         this.menu        = new Applet.AppletPopupMenu(this, orientation);
@@ -104,6 +106,19 @@ class ZenFanApplet extends Applet.TextApplet {
             en.close(null);
             return found;
         } catch { return null; }
+    }
+
+    // Re-resolve sysfs paths from the configured chip names; keeps the previous
+    // (or default) path if a name does not resolve.
+    _applyHwmonPaths() {
+        const tempBase = this._resolveHwmon(this.tempChipName || "coretemp");
+        const pwmBase  = this._resolveHwmon(this.pwmChipName  || "asus");
+        if (tempBase) SYS.temp = tempBase + "/temp1_input";
+        if (pwmBase) {
+            SYS.pwm       = pwmBase + "/pwm1";
+            SYS.pwmEnable = pwmBase + "/pwm1_enable";
+            SYS.rpm       = pwmBase + "/fan1_input";
+        }
     }
 
     // ── Menu ─────────────────────────────────────────────────────────────────
@@ -494,19 +509,28 @@ class ZenFanApplet extends Applet.TextApplet {
     // ── Auto-refresh ──────────────────────────────────────────────────────────
 
     startAutoRefresh() {
-        this._refreshId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
-            this.updateAll();          // async — returned Promise intentionally ignored
+        const secs = Math.max(1, parseInt(this.refreshInterval) || 1);
+        this._refreshId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, secs, () => {
+            this.updateAll();
             return GLib.SOURCE_CONTINUE;
         });
     }
 
+    // Re-arm the timer after the refresh-interval setting changes.
+    _restartAutoRefresh() {
+        if (this._refreshId) { GLib.source_remove(this._refreshId); this._refreshId = 0; }
+        this.startAutoRefresh();
+    }
+
     // Cinnamon lifecycle: remove the recurring timer so it does not keep firing
-    // against a destroyed applet after removal / panel reload (avoids Gjs-CRITICAL).
+    // against a destroyed applet after removal / panel reload (avoids Gjs-CRITICAL),
+    // and release the settings provider.
     on_applet_removed_from_panel() {
         if (this._refreshId) {
             GLib.source_remove(this._refreshId);
             this._refreshId = 0;
         }
+        if (this.settings) this.settings.finalize();
     }
 
     on_applet_clicked() { this.menu.toggle(); }

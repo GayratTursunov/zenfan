@@ -139,8 +139,9 @@ info "systemd service enabled and started"
 
 info "Installing Cinnamon applet..."
 mkdir -p "$APPLET_DIR"
-install -m 644 "$REPO_DIR/applet/applet.js"       "$APPLET_DIR/applet.js"
-install -m 644 "$REPO_DIR/applet/metadata.json"   "$APPLET_DIR/metadata.json"
+install -m 644 "$REPO_DIR/applet/applet.js"            "$APPLET_DIR/applet.js"
+install -m 644 "$REPO_DIR/applet/metadata.json"       "$APPLET_DIR/metadata.json"
+install -m 644 "$REPO_DIR/applet/settings-schema.json" "$APPLET_DIR/settings-schema.json"
 info "Applet installed: $APPLET_DIR"
 
 # ── Done ──────────────────────────────────────────────────────────────────────

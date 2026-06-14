@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Opt-in pre-commit hook: runs the same lint gate as CI before each commit.
+# Enable once per clone:   git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/tools/lint.sh"
