@@ -4,6 +4,13 @@ All notable changes to Zenfan are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Legacy service migration** — `install.sh` now stops, disables, and removes the pre-rename `zenbook-fan.service` before installing `zenfan.service`, preventing two units from launching the same daemon and fighting over the PWM channel on upgrade. `uninstall.sh` likewise removes the legacy unit so an orphaned copy can no longer keep the daemon running after removal.
+
+---
+
 ## [1.3] - 2026-02-28
 
 ### Added

@@ -25,11 +25,14 @@ echo ""
 warn "This will remove all Zenfan components."
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
-# Stop and disable service
+# Stop and disable service (including the legacy zenbook-fan.service name)
 info "Stopping zenfan service..."
-sudo systemctl stop zenfan.service    2>/dev/null || true
-sudo systemctl disable zenfan.service 2>/dev/null || true
+sudo systemctl stop    zenfan.service      2>/dev/null || true
+sudo systemctl disable zenfan.service      2>/dev/null || true
+sudo systemctl stop    zenbook-fan.service 2>/dev/null || true
+sudo systemctl disable zenbook-fan.service 2>/dev/null || true
 sudo rm -f /lib/systemd/system/zenfan.service
+sudo rm -f /etc/systemd/system/zenbook-fan.service /lib/systemd/system/zenbook-fan.service
 sudo systemctl daemon-reload
 
 # Restore auto fan control before removing binaries

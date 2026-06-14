@@ -115,6 +115,17 @@ info "polkit policy installed and reloaded"
 
 # ── systemd ───────────────────────────────────────────────────────────────────
 
+# Migrate legacy unit: versions before the rename installed the daemon as
+# "zenbook-fan.service". Leaving it enabled would run a second copy of the daemon
+# alongside zenfan.service, with both fighting over the same PWM channel.
+if systemctl list-unit-files 2>/dev/null | grep -q '^zenbook-fan\.service'; then
+    warn "Found legacy zenbook-fan.service — migrating to zenfan.service"
+    sudo systemctl stop    zenbook-fan.service 2>/dev/null || true
+    sudo systemctl disable zenbook-fan.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/zenbook-fan.service /lib/systemd/system/zenbook-fan.service
+    sudo systemctl daemon-reload
+fi
+
 info "Installing systemd service..."
 sudo install -m 644 "$REPO_DIR/systemd/zenfan.service" "$SYSTEMD_DIR/zenfan.service"
 sudo systemctl daemon-reload
