@@ -2,7 +2,7 @@
     "uuid": "zenfan@ux31e",
     "name": "Zenfan",
     "description": "Fan control and night acoustic mode for ASUS Zenbook UX31e",
-    "version": "1.3.2",
+    "version": "1.4.0",
     "author": "GayratTursunov",
     "website": "https://github.com/GayratTursunov/zenfan",
     "icon": "temperature-symbolic",

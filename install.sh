@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Zenfan install script v1.3.2
+# Zenfan install script v1.4.0
 # Installs all components for ASUS Zenbook UX31e on LMDE 7 / Cinnamon
 # Run as a normal user with sudo privileges: bash install.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ CONF_DIR="/etc"
 POLKIT_DIR="/usr/share/polkit-1/actions"
 SUDOERS_DIR="/etc/sudoers.d"
 SYSTEMD_DIR="/lib/systemd/system"
-VERSION="1.3.2"
+VERSION="1.4.0"
 
 GREEN="\033[0;32m"
 YELLOW="\033[1;33m"

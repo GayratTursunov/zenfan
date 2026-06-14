@@ -4,7 +4,7 @@ All notable changes to Zenfan are documented here.
 
 ---
 
-## [Unreleased]
+## [1.4.0] - 2026-06-14
 
 ### Added
 - **Applet settings (R9)** — a Cinnamon settings schema (`applet/settings-schema.json`) exposes the **panel refresh interval** (1–10 s) and the **hwmon chip names** (`coretemp`/`asus`) via the applet's Configure dialog, bound with `Settings.AppletSettings`. Changing the interval re-arms the timer live; changing a chip name re-resolves the sysfs paths. The settings provider is released in `on_applet_removed_from_panel()`.

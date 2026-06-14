@@ -8,8 +8,9 @@ finding (C/P/K/G/H).
 Every requirement lists **Rationale · Before/After · Files · Impact · Acceptance ·
 Risk**. Stages are ordered by impact; implement top-down.
 
-> Status: **Stage 1 (R1, R2) is implemented** alongside this document. Stages 2–5
-> are specified here for a later pass.
+> Status: **all requirements (R1–R11) implemented and released in v1.4.0**
+> (R1/R2 shipped earlier in v1.3.2). This document is retained as the rationale
+> and acceptance record.
 
 ---
 
@@ -297,16 +298,16 @@ to a pre-commit hook / CI. Would have caught C1 mechanically.
 |----|-------|-------|--------|-------------------|--------|
 | R1 | C1 | 1 | XS | correctness; stops 3 s log spam | **done** |
 | R2 | C2 | 1 | XS | stops leaked timer after teardown | **done** |
-| R3 | P1 | 2 | M | **~170k–260k fewer execs/day** | planned |
-| R4 | P2 | 2 | M | fewer idle repaints/parses | planned |
-| R5 | P3 | 2 | S | ~86k fewer execs/day (daemon) | planned |
-| R6 | P3 | 2 | XS | one fewer sysfs write/tick | planned |
-| R7 | K1 | 3 | M | resilience across kernel bumps | planned |
-| R8 | G1 | 4 | XS | removes deprecation; future-proof | planned |
-| R9 | G3 | 4 | M | configurability (optional) | planned |
-| R10| H1 | 5 | XS | doc accuracy | planned |
-| R11| H3 | 5 | S | prevents regressions | planned |
+| R3 | P1 | 2 | M | **~170k–260k fewer execs/day** | **done** |
+| R4 | P2 | 2 | M | fewer idle repaints/parses | **done** |
+| R5 | P3 | 2 | S | ~86k fewer execs/day (daemon) | **done** |
+| R6 | P3 | 2 | XS | one fewer sysfs write/tick | **done** |
+| R7 | K1 | 3 | M | resilience across kernel bumps | **done** |
+| R8 | G1 | 4 | XS | removes deprecation; future-proof | **done** |
+| R9 | G3 | 4 | M | configurability (optional) | **done** |
+| R10| H1 | 5 | XS | doc accuracy | **done** |
+| R11| H3 | 5 | S | prevents regressions | **done** |
 
 **Headline:** R3 is the dominant LMDE 7 power/perf win (idle applet drops from
-~2–3 process spawns/second to zero). R1/R2 are the correctness must-haves and are
-already applied.
+~2–3 process spawns/second to zero). All R1–R11 are implemented and released in
+v1.4.0.

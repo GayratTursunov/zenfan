@@ -4,7 +4,7 @@ Adaptive fan control suite for **ASUS Zenbook UX31e** running **LMDE 7** (Linux 
 
 ![LMDE 7](https://img.shields.io/badge/LMDE-7-87CEEB?style=flat-square)
 ![Cinnamon](https://img.shields.io/badge/Cinnamon-6.6-green?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.3-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.4.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
 ---
