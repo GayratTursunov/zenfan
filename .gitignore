@@ -6,6 +6,11 @@
 *.swo
 *~
 .DS_Store
+*.code-workspace
+
+# Local scratch / review notes (not part of the project)
+output_result.txt
+zenfan_code_review.txt
 
 # Python
 __pycache__/

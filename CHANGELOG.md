@@ -4,10 +4,11 @@ All notable changes to Zenfan are documented here.
 
 ---
 
-## [Unreleased]
+## [1.3.1] - 2026-06-14
 
 ### Fixed
 - **Legacy service migration** — `install.sh` now stops, disables, and removes the pre-rename `zenbook-fan.service` before installing `zenfan.service`, preventing two units from launching the same daemon and fighting over the PWM channel on upgrade. `uninstall.sh` likewise removes the legacy unit so an orphaned copy can no longer keep the daemon running after removal.
+- **Pipefail-safe unit detection** — the migration check used `systemctl list-unit-files | grep -q`, which is racy under `set -o pipefail` (`grep -q` closes the pipe on match, `systemctl` dies with SIGPIPE, and the pipeline reports failure even when the unit exists). Replaced with `systemctl cat` (no pipe) so the migration fires reliably.
 
 ---
 
